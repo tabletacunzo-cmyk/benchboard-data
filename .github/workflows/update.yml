@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Inverno (CET = UTC+1): attendi 1 ora per le 12:00 italiane esatte
+      - name: Inverno CET - attendi 1 ora per le 12:00 italiane esatte
         run: |
           M=$(date -u +%m)
           if [ "$M" = "11" ] || [ "$M" = "12" ] || [ "$M" = "01" ] || [ "$M" = "02" ] || [ "$M" = "03" ]; then
