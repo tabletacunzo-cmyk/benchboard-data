@@ -25,6 +25,29 @@ const ORG_PRETTY = {
 };
 const prettyOrg = (org) => ORG_PRETTY[(org || "").toLowerCase()] || (org ? org[0].toUpperCase() + org.slice(1) : "");
 
+// v4.5 — nomi leggibili dagli slug: "gpt-image-2 (medium)" → "GPT Image 2 (Medium)"
+const ACRONYMS = {
+  gpt: "GPT", llm: "LLM", ai: "AI", sd: "SD", xl: "XL", xxl: "XXL", vlm: "VLM",
+  api: "API", tts: "TTS", asr: "ASR", ocr: "OCR", ideogram: "Ideogram",
+  gemini: "Gemini", claude: "Claude", flux: "FLUX", imagen: "Imagen", mistral: "Mistral",
+  recraft: "Recraft", reve: "Reve", ide: "IDE", omni: "Omni", neo: "Neo", ultra: "Ultra",
+  pro: "Pro", preview: "Preview", mini: "Mini", nano: "Nano", banana: "Banana",
+  flash: "Flash", image: "Image", video: "Video", lite: "Lite", high: "High",
+  medium: "Medium", low: "Low", max: "Max", open: "Open", web: "Web", search: "Search",
+};
+function prettyName(slug) {
+  return String(slug || "")
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => {
+      const lw = w.toLowerCase();
+      if (ACRONYMS[lw]) return ACRONYMS[lw];
+      if (/^\d/.test(w) || /^v\d/i.test(lw)) return w; // versioni: "3.1", "v2"
+      return lw[0].toUpperCase() + lw.slice(1);
+    })
+    .join(" ");
+}
+
 async function getJson(url) {
   const res = await fetch(url, { headers: { "User-Agent": "BenchBoard/1.0" } });
   if (!res.ok) throw new Error(`HTTP ${res.url} → ${res.status}`);
@@ -144,8 +167,8 @@ function lmaEntries(rows, category) {
     if (o.vote_count != null) metrics.push({ label: "Voti", value: fmtCompact(o.vote_count), fraction: null });
     if (o.license) metrics.push({ label: "Licenza", value: o.license, fraction: null });
     return {
-      id: norm(o.model_name), name: o.model_name, org: prettyOrg(o.organization), category,
-      score: o.rating ?? null, scoreLabel: "LMArena Elo", metrics,
+      id: norm(o.model_name), name: prettyName(o.model_name), org: prettyOrg(o.organization), category,
+      score: o.rating != null ? Math.round(o.rating) : null, scoreLabel: "LMArena Elo", metrics,
       price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
       downloads: null, likes: null, releaseDate: null, hfUrl: null,
     };
@@ -184,16 +207,19 @@ async function fetchAsr() {
   if (!data) return [];
   return data.map((row) => {
     const html = String(row[2] ?? "");
-    const name = (html.match(/>([^<]+)<\/a>/) || [])[1] || html;
+    const rawName = (html.match(/>([^<]+)<\/a>/) || [])[1] || html;
+    // "elevenlabs/scribe_v2" → nome "Scribe V2", casa "Elevenlabs"
+    const modelPart = rawName.includes("/") ? rawName.split("/").slice(1).join(" ") : rawName;
+    const name = prettyName(modelPart);
     const wer = Number(row[3]);
     const rtfx = Number(row[4]);
     const metrics = [];
     if (!Number.isNaN(rtfx) && rtfx > 0) metrics.push({ label: "RTFx", value: rtfx.toFixed(1), fraction: Math.min(rtfx / 100, 1) });
     if (!Number.isNaN(Number(row[0]))) metrics.push({ label: "Posizione", value: String(row[0]), fraction: null });
-    const orgSlug = name.split("/")[0] || "";
+    const orgSlug = rawName.includes("/") ? rawName.split("/")[0] : "";
     return {
       id: norm(name), name, org: prettyOrg(orgSlug), category: "stt",
-      score: Number.isNaN(wer) ? null : 100 - wer, scoreLabel: "ASR Accuracy", metrics,
+      score: Number.isNaN(wer) ? null : Math.round((100 - wer) * 10) / 10, scoreLabel: "ASR Accuracy", metrics,
       price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
       downloads: null, likes: null, releaseDate: null, hfUrl: null,
     };
