@@ -14,16 +14,40 @@ const fmtCompact = (n) =>
   : String(n);
 const fmt1 = (v) => Number(v).toFixed(1);
 
-const ORG_PRETTY = {
-  openai: "OpenAI", anthropic: "Anthropic", google: "Google", xai: "xAI", zai: "Z AI",
-  meta: "Meta", qwen: "Qwen", alibaba: "Alibaba", deepseek: "DeepSeek", moonshotai: "Moonshot AI",
-  microsoft: "Microsoft", minimax: "MiniMax", baidu: "Baidu", tencent: "Tencent",
-  bytedance: "ByteDance", nvidia: "NVIDIA", xiaomi: "Xiaomi", kuaishou: "Kuaishou",
-  mistral: "Mistral AI", cohere: "Cohere", blackforestlabs: "Black Forest Labs",
-  lg: "LG AI Research", sktelecom: "SK Telecom", upstage: "Upstage", stepfun: "StepFun",
-  meituan: "Meituan", nexagi: "NEX AGI", amazon: "Amazon", perplexity: "Perplexity",
+// v5.2 — case CANONICHE: chiavi normalizzate (minuscolo, senza simboli) → nome display
+// unico. Così "Moonshot"/"Moonshot AI", "Z-ai"/"Z.ai"/"Zai-org", "Meta-llama"/"Facebook"
+// sono UNA casa sola: stessa schermata casa, stesso logo.
+const ORG_MAP = {
+  openai: "OpenAI", anthropic: "Anthropic", google: "Google", googledeepmind: "Google DeepMind",
+  xai: "xAI", zai: "Z AI", zaiorg: "Z AI", meta: "Meta", metallama: "Meta", facebook: "Meta",
+  qwen: "Qwen", alibaba: "Alibaba", deepseek: "DeepSeek", deepseekai: "DeepSeek",
+  moonshot: "Moonshot AI", moonshotai: "Moonshot AI",
+  microsoft: "Microsoft", microsoftai: "Microsoft", ibm: "IBM", ibmgranite: "IBM", ibmresearch: "IBM Research",
+  minimax: "MiniMax", minimaxai: "MiniMax", mistral: "Mistral AI", mistralai: "Mistral AI",
+  cohere: "Cohere", coherelabs: "Cohere", nvidia: "NVIDIA", baai: "BAAI",
+  baidu: "Baidu", tencent: "Tencent", bytedance: "ByteDance", xiaomi: "Xiaomi", chinamobile: "China Mobile",
+  kuaishou: "Kuaishou", kling: "Kling", kwaipilot: "Kwaipilot", meituan: "Meituan", longcat: "LongCat",
+  upstage: "Upstage", stepfun: "StepFun", lg: "LG AI Research", sktelecom: "SK Telecom",
+  nexagi: "NEX AGI", nex: "NEX AGI",
+  luma: "Luma", lumaai: "Luma", lumalabs: "Luma", leonardo: "Leonardo", leonardoai: "Leonardo",
+  moonvalley: "Moon Valley", videorebirth: "VideoRebirth", genmo: "Genmo", haiper: "Haiper",
+  pika: "Pika", runway: "Runway", krea: "Krea", vidu: "Vidu", seedance: "Seedance",
+  thinkingmachines: "Thinking Machines", hidream: "HiDream", liquidai: "LiquidAI",
+  blackforestlabs: "Black Forest Labs", bfl: "Black Forest Labs",
+  amazon: "Amazon", perplexity: "Perplexity", elevenlabs: "ElevenLabs", assemblyai: "AssemblyAI",
+  inclusionai: "InclusionAI", unsloth: "Unsloth", unslothai: "Unsloth", allenai: "AllenAI",
+  tii: "TII", technologyinnovationinstitute: "TII", alephalpha: "Aleph Alpha", deepl: "DeepL",
+  openmoss: "OpenMOSS", openmossteam: "OpenMOSS", acestep: "ACE-Step",
+  stability: "Stability AI", stabilityai: "Stability AI", ibmresearch: "IBM",
+  mispeech: "Xiaomi", jinaai: "Jina AI", voyageai: "VoyageAI", smallestai: "SmallestAI",
+  naver: "Naver", ideogram: "Ideogram", recraft: "Recraft", descript: "Descript",
+  gladia: "Gladia", speechmatics: "Speechmatics", kandinsky: "Kandinsky",
 };
-const prettyOrg = (org) => ORG_PRETTY[(org || "").toLowerCase()] || (org ? org[0].toUpperCase() + org.slice(1) : "");
+const titleOrg = (org) => org.replace(/(^|[\s\-_.])([a-z])/g, (m, sep, ch) => sep + ch.toUpperCase());
+const prettyOrg = (org) => {
+  if (!org) return "";
+  return ORG_MAP[norm(org)] || titleOrg(org);
+};
 
 // v4.5 — nomi leggibili dagli slug: "gpt-image-2 (medium)" → "GPT Image 2 (Medium)"
 const ACRONYMS = {
@@ -175,7 +199,18 @@ function lmaEntries(rows, category) {
   });
 }
 
-// ---------- TTS Arena V2 ----------
+// v5.2 — casa TTS ricavata dalla prima parola del nome ("MiniMax Speech 2.8 HD" →
+// "MiniMax", "Eleven Turbo v2.5" → "ElevenLabs"): la fonte non la fornisce.
+const TTS_ORG_GUESS = {
+  minimax: "MiniMax", eleven: "ElevenLabs", openaudio: "OpenAudio", hume: "Hume AI",
+  cartesia: "Cartesia", inworld: "Inworld", deepdub: "Deepdub", typecast: "Typecast",
+  hithink: "HiThink", lightning: "Lightning", gradium: "Gradium", papla: "Papla",
+  vocu: "Vocu", castleflow: "CastleFlow", luck: "Luck Dolphin", luna: "Luna TTS",
+};
+function guessTtsOrg(name) {
+  const w = norm(String(name || "").split(/\s+/)[0] || "");
+  return TTS_ORG_GUESS[w] || "";
+}
 
 async function fetchTts() {
   const d = await getJson("https://tts-agi-tts-arena-v2.hf.space/api/leaderboard");
@@ -185,7 +220,7 @@ async function fetchTts() {
     if (o.totalVotes != null) metrics.push({ label: "Voti", value: fmtCompact(o.totalVotes), fraction: null });
     if (o.tier) metrics.push({ label: "Tier", value: o.tier, fraction: null });
     return {
-      id: norm(o.name || o.id), name: o.name || o.id, org: "", category: "tts",
+      id: norm(o.name || o.id), name: o.name || o.id, org: guessTtsOrg(o.name || o.id), category: "tts",
       score: o.elo ?? null, scoreLabel: "TTS Arena Elo", metrics,
       price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
       downloads: null, likes: null, releaseDate: null, hfUrl: null,
