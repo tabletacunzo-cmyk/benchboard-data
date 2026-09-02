@@ -38,10 +38,27 @@ const ORG_MAP = {
   inclusionai: "InclusionAI", unsloth: "Unsloth", unslothai: "Unsloth", allenai: "AllenAI",
   tii: "TII", technologyinnovationinstitute: "TII", alephalpha: "Aleph Alpha", deepl: "DeepL",
   openmoss: "OpenMOSS", openmossteam: "OpenMOSS", acestep: "ACE-Step",
-  stability: "Stability AI", stabilityai: "Stability AI", ibmresearch: "IBM",
-  mispeech: "Xiaomi", jinaai: "Jina AI", voyageai: "VoyageAI", smallestai: "SmallestAI",
-  naver: "Naver", ideogram: "Ideogram", recraft: "Recraft", descript: "Descript",
-  gladia: "Gladia", speechmatics: "Speechmatics", kandinsky: "Kandinsky",
+  // v5.5 — slug HF ufficiali delle case (per il filtro repo-ufficiale): "deepseek-ai",
+  // "meta-llama", "Qwen", "mistralai", "stabilityai"... normalizzati da norm()
+  deepseekai: "DeepSeek", metallama: "Meta", qwen: "Qwen", allenai: "AllenAI",
+  ibmresearch: "IBM", ibmgranite: "IBM", coherelabs: "Cohere", naver: "Naver",
+  nvidia: "NVIDIA", microsoft: "Microsoft", google: "Google", googledeepmind: "Google DeepMind",
+  stability: "Stability AI", stabilityai: "Stability AI", blackforestlabs: "Black Forest Labs",
+  bfl: "Black Forest Labs", tencent: "Tencent", tencentyoutu: "Tencent", bytedance: "ByteDance",
+  moonshot: "Moonshot AI", zaiorg: "Z AI", zai: "Z AI", zaiorganization: "Z AI",
+  kuaishou: "Kuaishou", kling: "Kling", kwaipilot: "Kwaipilot", xiaomi: "Xiaomi",
+  mispeech: "Xiaomi", stepfun: "StepFun", upstage: "Upstage", lg: "LG AI Research",
+  exaone: "LG AI Research", thinkingmachines: "Thinking Machines", inclusionai: "InclusionAI",
+  bigcode: "BigCode", nomicai: "Nomic AI", jinaai: "Jina AI", voyageai: "VoyageAI",
+  elevenlabs: "ElevenLabs", assemblyai: "AssemblyAI", cartesia: "Cartesia",
+  kyutai: "Kyutai", suno: "Suno", openaudio: "OpenAudio", fishaudio: "Fish Audio",
+  ideogram: "Ideogram", recraft: "Recraft", lightricks: "Lightricks", runway: "Runway",
+  luma: "Luma", lumaai: "Luma", lumalabs: "Luma", genmo: "Genmo", haiper: "Haiper",
+  pika: "Pika", vidu: "Vidu", seedance: "Seedance", moonvalley: "Moon Valley",
+  kandinsky: "Kandinsky", hidream: "HiDream", minimax: "MiniMax", minimaxai: "MiniMax",
+  baichuan: "Baichuan", baidu: "Baidu", alephalpha: "Aleph Alpha", tii: "TII",
+  technologyinnovationinstitute: "TII", openbmb: "OpenBMB", "01ai": "01.AI",
+  yitutech: "YituTech", abeai: "ABE.AI", sapling: "Sapling AI", paradigmailabe: "Paradigm AI Lab",
 };
 const titleOrg = (org) => org.replace(/(^|[\s\-_.])([a-z])/g, (m, sep, ch) => sep + ch.toUpperCase());
 const prettyOrg = (org) => {
@@ -281,16 +298,26 @@ async function fetchAsr() {
 // ---------- Hugging Face (popolarità per embedding/audio + arricchimento) ----------
 
 async function fetchHf(tag, limit = 100) {
-  const d = await getJson(
+  // v5.5 — DUE richieste: top per download + ultimi usciti (i modelli nuovi hanno
+  // pochi download e non entrano mai nei top), fuse per id.
+  const dl = await getJson(
     `https://huggingface.co/api/models?pipeline_tag=${encodeURIComponent(tag)}&sort=downloads&direction=-1&limit=${limit}`
   );
-  return d.map((o) => ({
-    id: norm(o.id), name: o.id, org: prettyOrg(o.id.split("/")[0]), category: "",
-    score: null, scoreLabel: "Downloads", metrics: [],
-    downloads: o.downloads ?? null, likes: o.likes ?? null,
-    releaseDate: (o.createdAt || "").slice(0, 10) || null, hfUrl: "https://huggingface.co/" + o.id,
-    price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
-  }));
+  const fresh = await getJson(
+    `https://huggingface.co/api/models?pipeline_tag=${encodeURIComponent(tag)}&sort=createdAt&direction=-1&limit=1000`
+  );
+  const map = new Map();
+  for (const o of [...dl, ...fresh]) {
+    if (map.has(o.id)) continue;
+    map.set(o.id, {
+      id: norm(o.id), name: o.id, org: prettyOrg(o.id.split("/")[0]), category: "",
+      score: null, scoreLabel: "Downloads", metrics: [],
+      downloads: o.downloads ?? null, likes: o.likes ?? null,
+      releaseDate: (o.createdAt || "").slice(0, 10) || null, hfUrl: "https://huggingface.co/" + o.id,
+      price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
+    });
+  }
+  return [...map.values()];
 }
 
 function enrichDownloads(entries, hfList) {
@@ -303,14 +330,79 @@ function enrichDownloads(entries, hfList) {
   });
 }
 
+// v5.5 — COMPLETAMENTO: i modelli HF più scaricati della categoria che NON sono in
+// classifica vengono aggiunti in coda con i loro download (es. DeepSeek-V4-Flash-Vision
+// appena uscito, non ancora valutato da LMArena). Niente doppioni (match a token) e
+// niente quantizzazioni/riposti di terzi (solo casa ufficiale = org con più modelli).
+const STOP_TOKENS = new Set(["gguf","mlx","awq","gptq","exl3","exl2","fp8","int8","nvfp4","mxfp4","4bit","8bit","6bit","5bit","abliterated","uncensored","quantized","quant","dwarfstar","oq2e","iq2xxs","q2","q4","q8","base","distill","ggml","onnx","merge","merged","mergekit","lora","finetune","tuned","checkpoint","ckpt"]);
+// v5.5 — RE della pappa conversione: presa sul nome NORMALIZZATO (le cifre non si
+// staccano: "NVFP4"→"nvfp4"): gguf, ggml, nvfp, mxfp, fp8, 4bit, w4a16, qat...
+const QUANT_RE = /gguf|ggml|nvfp|mxfp|awq|gptq|exl[23]|\bfp8\b|\bfp16\b|bf16|[_.-]?[4568]bit|qat|imatrix|autoround|int[48]|w4a16|q[458]_|q8_0|onnx|abliterated|uncensored|heretic|imatrix/i;
+// v5.5 — repo ufficiale = casa nota (chiave ORG_MAP normalizzata): deepseek-ai, Qwen,
+// meta-llama... Le ricariche di terzi (unsloth, mlx-community, nick vari) restano fuori.
+const OFFICIAL_ORGS = new Set(Object.keys(ORG_MAP));
+const isOfficialRepo = (org) => OFFICIAL_ORGS.has(norm(org));
+function hfOnlyEntries(entries, hfList, category, maxAdd = 25) {
+  const normName = (n) => norm(String(n || "").replace(/^[a-z0-9_.\-]+\//i, ""));
+  const present = new Set();
+  for (const e of entries) {
+    const words = alphaTokens(e.name).filter((w) => !STOP_TOKENS.has(w));
+    present.add(e.id);
+    present.add(norm(e.name));
+    if (words.length >= 2) present.add(words.sort().join("-"));
+  }
+  // v5.5 — candidati: prima le NOVITÀ ufficiali degli ultimi 45 giorni (es. DeepSeek
+  // V4 Vision uscito ieri, pochi download), poi i top download. MaxAdd limita il totale.
+  const now = Date.now();
+  const freshCut = now - 45 * 24 * 3600 * 1000;
+  const fresh = hfList.filter((h) => {
+    const t = Date.parse(h.releaseDate || "");
+    return Number.isFinite(t) && t >= freshCut;
+  });
+  const candidates = [...fresh, ...hfList];
+  const added = [];
+  for (const h of candidates) {
+    if (added.length >= maxAdd) break;
+    const orgSlug = String(h.name).includes("/") ? String(h.name).split("/")[0] : "";
+    if (!orgSlug || !isOfficialRepo(orgSlug)) continue; // solo repo ufficiali
+    const modelPart = normName(h.name);
+    const slug = norm(String(h.name).split("/").pop() || "");
+    const rawWords = alphaTokens(slug);
+    // v5.5 — niente conversioni/quantizzazioni (GGUF, NVFP4...) né varianti abliterate:
+    // il check va sul nome normalizzato perché i token perdono le cifre
+    if (QUANT_RE.test(slug)) continue;
+    const words = rawWords.filter((w) => !STOP_TOKENS.has(w));
+    if (words.length < 2) continue; // nome troppo povero per dire che esiste
+    const key = words.sort().join("-");
+    const fullKey = norm(orgSlug) + "-" + key;
+    if (present.has(key) || present.has(fullKey) || present.has(modelPart)) continue;
+    present.add(key); present.add(fullKey);
+    const isFresh = fresh.includes(h);
+    added.push({
+      ...h, category,
+      id: modelPart, name: prettyName(String(h.name).split("/").pop()),
+      org: prettyOrg(orgSlug),
+      score: null, scoreLabel: "Downloads",
+      metrics: [
+        { label: "Download", value: fmtCompact(h.downloads || 0), fraction: null },
+        { label: isFresh ? "Stato" : "Hugging Face", value: isFresh ? "Nuovo uscita" : "Modello aperto", fraction: null },
+      ],
+    });
+  }
+  return [...entries, ...added];
+}
+
 // ---------- Assemblaggio ----------
 
 function finalize(entries) {
-  const sorted = [...entries].sort((a, b) =>
-    (b.score ?? b.downloads ?? -Infinity) - (a.score ?? a.downloads ?? -Infinity)
-  );
+  // v5.5 — prima i modelli con punteggio (classifica vera), poi gli altri per download
+  const sorted = [...entries].sort((a, b) => {
+    const sa = a.score ?? -Infinity, sb = b.score ?? -Infinity;
+    if (sa !== sb) return sb - sa;
+    return (b.downloads ?? -Infinity) - (a.downloads ?? -Infinity);
+  });
   const maxScore = sorted[0]?.score ?? 0;
-  const maxDl = sorted[0]?.downloads ?? 0;
+  const maxDl = Math.max(...sorted.filter((e) => e.score == null).map((e) => e.downloads ?? 0), 0);
   const seen = new Map();
   return sorted.map((e) => {
     const n = seen.get(e.id) || 0;
@@ -323,14 +415,34 @@ function finalize(entries) {
 }
 
 const hfDownloadsFor = {};
+// v5.5 — niente conversioni di terzi (QUANT_RE definito sopra) e niente doppioni dello
+// stesso modello caricato da utenti diversi: si tiene il repo più scaricato.
 for (const [tag, key] of [["feature-extraction", "embeddings"], ["text-to-audio", "audio"]]) {
-  hfDownloadsFor[key] = await fetchHf(tag).then((l) =>
-    l.map((e) => ({ ...e, category: key, metrics: (e.likes != null ? [{ label: "Likes", value: fmtCompact(e.likes), fraction: null }] : []) }))
-  );
+  const seenBase = new Map();
+  const clean = await getJson(
+    `https://huggingface.co/api/models?pipeline_tag=${encodeURIComponent(tag)}&sort=downloads&direction=-1&limit=400`
+  ).then((d) => d.filter((o) => !QUANT_RE.test(o.id)));
+  for (const o of clean) {
+    const base = norm(o.id.split("/").pop() || o.id);
+    if (seenBase.has(base)) continue; // stesso modello da un altro utente
+    seenBase.set(base, o);
+    if (seenBase.size >= 100) break;
+  }
+  hfDownloadsFor[key] = [...seenBase.values()].map((o) => ({
+    id: norm(o.id), name: o.id, org: prettyOrg(o.id.split("/")[0]), category: key,
+    score: null, scoreLabel: "Downloads",
+    metrics: (o.likes != null ? [{ label: "Likes", value: fmtCompact(o.likes), fraction: null }] : []),
+    downloads: o.downloads ?? null, likes: o.likes ?? null,
+    releaseDate: (o.createdAt || "").slice(0, 10) || null, hfUrl: "https://huggingface.co/" + o.id,
+    price1MBlended: null, imagePrice: null, outputTps: null, contextWindow: null,
+  }));
 }
 
 const orData = await getJson("https://openrouter.ai/api/v1/models");
 const orModels = parseOpenRouter(orData.data || []);
+
+// v5.5 — anche per il testo: modelli HF ufficiali non in classifica AA in coda
+const textHfList = await fetchHf("text-generation", 200).then((l) => l.map((e) => ({ ...e, category: "text" })));
 
 const [lmaImage, lmaVideo, lmaVision] = await Promise.all([
   fetchLma("text_to_image"), fetchLma("text_to_video"), fetchLma("vision"),
@@ -339,20 +451,27 @@ const [ttsRows, asrRows] = await Promise.all([fetchTts(), fetchAsr()]);
 
 const textEntries = finalize(
   matchOr(
-    orModels
-      .filter((o) => o.score != null)
-      .map((o) => entryFromOr(o, "text"))
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, 150),
+    hfOnlyEntries(
+      orModels
+        .filter((o) => o.score != null)
+        .map((o) => entryFromOr(o, "text"))
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, 150),
+      textHfList, "text"
+    ),
     orModels
   )
 );
 
-const imageEntries = finalize(matchOr(enrichDownloads(lmaEntries(lmaImage, "image"),
-  await fetchHf("text-to-image").then((l) => l.map((e) => ({ ...e, category: "image" })))), orModels));
+const imageHfList = await fetchHf("text-to-image").then((l) => l.map((e) => ({ ...e, category: "image" })));
+const imageEntries = finalize(matchOr(hfOnlyEntries(
+  enrichDownloads(lmaEntries(lmaImage, "image"), imageHfList),
+  imageHfList, "image"), orModels));
 const videoEntries = finalize(matchOr(lmaEntries(lmaVideo, "video"), orModels));
-const multimodalEntries = finalize(matchOr(enrichDownloads(lmaEntries(lmaVision, "multimodal"),
-  await fetchHf("image-text-to-text").then((l) => l.map((e) => ({ ...e, category: "multimodal" })))), orModels));
+const visionHfList = await fetchHf("image-text-to-text").then((l) => l.map((e) => ({ ...e, category: "multimodal" })));
+const multimodalEntries = finalize(matchOr(hfOnlyEntries(
+  enrichDownloads(lmaEntries(lmaVision, "multimodal"), visionHfList),
+  visionHfList, "multimodal"), orModels));
 const ttsEntries = finalize(matchOr(ttsRows, orModels));
 const sttEntries = finalize(matchOr(asrRows, orModels));
 
