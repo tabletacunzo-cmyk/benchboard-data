@@ -82,6 +82,23 @@ async function getJson(url) {
 
 const VENDOR_TOKENS = new Set(["openai","google","anthropic","xai","zai","meta","qwen","alibaba","moonshotai","deepseek","minimax","microsoft","bytedance","tencent","baidu","nvidia","mistral","cohere","amazon","perplexity","xiaomi","kuaishou","kling","upstage","stepfun","lg","meituan","nexagi","moonvalley","genmo","haiper","pika","runway","luma","leonardo","krea","vidu","elevenlabs","blackforestlabs"]);
 
+// v5.4 — nomi dei modelli di testo SENZA prefisso casa: "Anthropic: Claude Fable 5.1"
+// → "Claude Fable 5.1" (la casa è già mostrata sotto il nome nell'app).
+// Il prefisso si toglie SOLO se è davvero la casa del modello (orgRaw), così i nomi
+// che contengono ":" per altri motivi restano intatti.
+function stripOrgPrefix(name, orgRaw) {
+  const s = String(name || "");
+  const cut = s.indexOf(":");
+  if (cut <= 0) return s;
+  const prefix = s.slice(0, cut).trim();
+  const p = norm(prefix), o = norm(orgRaw || "");
+  // prefisso = casa esatta, oppure uno dei due contiene l'altro ("spaceXai"/"xai",
+  // "mistral"/"mistralai", "ibm"/"ibmgranite") e il resto è un nome vero (non vuoto)
+  const rest = s.slice(cut + 1).trim();
+  const isOrg = p === o || (o.length >= 2 && (p.includes(o) || o.includes(p)));
+  return isOrg && rest ? rest : s;
+}
+
 function parseOpenRouter(orData) {
   return orData.map((m) => {
     const pricing = m.pricing || {};
@@ -100,7 +117,7 @@ function parseOpenRouter(orData) {
       id: norm(m.id),
       nameWords: alphaTokens(m.name || ""),
       nameNorm: norm(m.name || ""),
-      name: m.name || "",
+      name: stripOrgPrefix(m.name || "", m.id.split("/")[0] || ""),
       orgRaw: (m.id.split("/")[0] || "").toLowerCase(),
       score: aa.intelligence_index ?? null,
       scoreLabel: "Intelligence Index",
